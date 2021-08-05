@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from src import preprocessing as prep
+from src import dataprocessor as prep
 
 
 class PreprocessingTestCase(unittest.TestCase):

@@ -2,6 +2,8 @@
 #
 # Ari Biswas, 08/03/2021
 
+import tensorflow as tf
+import tensorflow_datasets as tfds
 import xml.etree.cElementTree as et
 import pandas as pd
 import numpy as np
@@ -77,3 +79,35 @@ def load_data(filename):
     print(f"Imported {len(annotations)} files.")
 
     return x, y
+
+
+def load_dataset():
+    """
+    Load training dataset from stanford_dogs tfds
+    :return:
+    ds_train (tf.data.DataSet) The requested training dataset.
+    ds_test (tf.data.DataSet) The requested test dataset.
+    ds_info (tfds.core.DatasetInfo) The requested dataset info.
+    """
+    (ds_train, ds_test), ds_info = tfds.load('stanford_dogs',
+                                             split=['train', 'test'],
+                                             shuffle_files=True,
+                                             as_supervised=True,
+                                             with_info=True,
+                                             data_dir='../data/tfds')
+    return ds_train, ds_test, ds_info
+
+
+def preprocess_img(image, label, size=(120, 120)):
+    """
+    Preprocess image by resizing to 80x60, casting data type `uint8` -> `float32`2 and normalizing values between 0-1.
+    :param image: The image to be processed.
+    :param label: The associated label.
+    :param size: Output image size.
+    :return:
+    processed_image, label
+    """
+    resized_image = tf.image.resize(image, size)
+    cast_img = tf.cast(resized_image, tf.float32)
+    processed_img = cast_img / 255.
+    return processed_img, label
