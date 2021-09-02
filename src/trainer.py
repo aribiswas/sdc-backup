@@ -2,36 +2,52 @@ import tensorflow as tf
 import model as mdl
 import dataprocessor as proc
 import os
+import datetime
 
 
-checkpoint_path = "../checkpoints/train_1.ckpt"
+timestamp_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+save_path = "../trained_models"
+checkpoint_path = "../checkpoints/" + timestamp_str + "/model.ckpt"
 checkpoint_dir = os.path.dirname(checkpoint_path)
+log_dir = "../logs/fit/" + timestamp_str
+
+input_shape = (224, 224, 3)
+num_breeds = 120
+
+ds_train, ds_test, ds_info = proc.load_dataset()
+train_batches = proc.prepare(ds_train, input_shape, num_breeds, batch_size=32)
+test_batches = proc.prepare(ds_test, input_shape, num_breeds,  batch_size=32)
 
 
-def train_model():
-    # Load data from stanford dogs dataset
-    ds_train, ds_test, ds_info = proc.load_dataset()
+def create_model():
+    # Create a new model instance
+    # net = mdl.alexnet(input_shape, num_breeds, lr=0.001)
+    # net = mdl.vgg16(input_shape, num_breeds, lr=0.0001)
+    # net = mdl.resnet50(input_shape, num_breeds, lr=0.0002)  # 0.01
+    net = mdl.mobilenet(input_shape, num_breeds, lr=0.0001)  # 0.01
 
-    # Build a training pipeline
-    ds_train = ds_train.map(lambda im, label: proc.preprocess_img(im, label, (120, 120)),
-                            num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds_train = ds_train.cache()
-    ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
-    ds_train = ds_train.batch(128)
-    ds_train = ds_train.prefetch(tf.data.experimental.AUTOTUNE)
+    return net
 
-    # Build evaluation pipeline
-    ds_test = ds_test.map(lambda im, label: proc.preprocess_img(im, label, (120, 120)),
-                          num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds_test = ds_test.batch(128)
-    ds_test = ds_test.cache()
-    ds_test = ds_test.prefetch(tf.data.experimental.AUTOTUNE)
 
-    # Create a model
-    net = mdl.alexnet(input_size=(120, 120, 3))
+def evaluate(net):
+    print("Evaluating model...")
+    # Evaluate the model
+    metrics = net.evaluate(test_batches, return_dict=True, verbose=1)
+    for key, val in metrics.items():
+        print(key + ": {:.2f}".format(val))
+
+
+def learn(net):
+    print("Training model...")
+
+    # Analyze the model
     net.summary()
-    evaluate_model(net, ds_test)
+    # evaluate(net, test_batches)
 
+    # Create a callback for visualization in TensorBoard
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
+                                                          histogram_freq=1,
+                                                          profile_batch=0)
     # Create a callback that saves the model's weights
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                      save_weights_only=True,
@@ -39,33 +55,21 @@ def train_model():
 
     # Train
     net.fit(
-        ds_train,
+        train_batches,
         epochs=10,
-        validation_data=ds_test,
-        callbacks=[cp_callback]
+        validation_data=test_batches,
+        callbacks=[tensorboard_callback]  # , cp_callback]
     )
 
-    evaluate_model(net, ds_test)
+    # save the model weights
+    net.save(save_path + "/mobilenet_1")
 
 
-def evaluate_model(net, test_ds):
-    # Evaluate the model
-    loss, acc = net.evaluate(test_ds, verbose=2)
-    print("Untrained model, accuracy: {:5.2f}%".format(100 * acc))
+def main():
+    tf.random.set_seed(0)
+    net = create_model()
+    learn(net)
 
 
-def load_model():
-    latest = tf.train.latest_checkpoint(checkpoint_dir)
-
-    # Create a new model instance
-    net = mdl.alexnet(input_size=(120, 120, 3))
-
-    # Load the previously saved weights
-    net.load_weights(latest)
-
-    return net
-
-
-train_model()
-
-
+if __name__ == "__main__":
+    main()
