@@ -13,77 +13,6 @@ import os
 from PIL import Image, ImageFilter
 
 
-def load_annotations(filename):
-    csv_df = pd.read_csv(filename, delimiter=",")
-    tags = ('name', 'width', 'height', 'depth', 'xmin', 'ymin', 'xmax', 'ymax', 'pose', 'truncated', 'difficult',
-            'folder', 'filename')
-
-    info_list = []
-
-    for _, row in csv_df.iterrows():
-        file = "../data/Annotation/" + row['annotation']
-        tree = et.parse(file)
-        root = tree.getroot()
-        info = dict()
-        for elem in root.iter():
-            if elem.tag in tags:
-                info[elem.tag] = elem.text
-            if elem.tag == 'filename':
-                info[elem.tag] = row['filename']
-        info_list.append(info)
-
-    df = pd.DataFrame(info_list, columns=tags)
-    df = df.astype({'width': 'float', 'height': 'float', 'depth': 'float', 'xmin': 'float', 'ymin': 'float',
-                    'xmax': 'float', 'ymax': 'float'})
-    return df
-
-
-def preprocess_image(img_path, bounding_box=None, output_size=None, smooth=True, show=False):
-    im = Image.open(img_path)
-    if bounding_box is not None:
-        im = im.crop(bounding_box)
-    if output_size is not None:
-        im = im.resize(output_size)
-    if smooth:
-        im = im.filter(ImageFilter.GaussianBlur)
-    if show:
-        im.show()
-    return np.asarray(im) / 255.0
-
-
-def one_hot_encode(label, labels_list):
-    num_labels = len(labels_list)
-    encoded = []
-    idx = int(labels_list.index(label))
-    enc = np.zeros(num_labels)
-    enc[idx] = 1
-    encoded.append(enc)
-    return encoded
-
-
-def load_data(filename):
-    print('Reading annotations...')
-    annotations = load_annotations(filename)
-
-    labels = list(annotations['name'].unique())
-
-    x = []
-    y = []
-
-    print("Reading images. This may take a while...")
-    for idx, row in annotations.iterrows():
-        img_path = f"../data/Images/{row['filename']}"
-        bounding_box = (row['xmin'], row['ymin'], row['xmax'], row['ymax'])
-        output_size = (80, 60)
-        image = preprocess_image(img_path, bounding_box, output_size, smooth=True)
-        encoded_name = one_hot_encode(row['name'], labels)
-        x.append(image)
-        y.append(encoded_name)
-    print(f"Imported {len(annotations)} files.")
-
-    return x, y
-
-
 def load_dataset():
     """
     Load stanford_dogs tensorflow dataset.
@@ -102,6 +31,17 @@ def load_dataset():
 
 
 def preprocess(data, image_size, num_labels, cast=True, resize=True, normalize=True, one_hot=True):
+    """
+    Process an image.
+    :param data: Tensorflow datset containing an image and label.
+    :param image_size: Size of the image. Images may be resized to this size. E.g. (224, 224)
+    :param num_labels: Number of labels for prediction.
+    :param cast: Flag for casting to float32. True or False.
+    :param resize: Flag for resizing the image. True or False.
+    :param normalize: Flag for normalizing the image pixel values from 0-1. True or False.
+    :param one_hot: Flag for one hot encoding the labels. True or False.
+    :return: Processed image and encoded label.
+    """
     # processed_image = tf.keras.applications.resnet.preprocess_input(data['image'])
     processed_image = data['image']
     label = data['label']
@@ -117,6 +57,14 @@ def preprocess(data, image_size, num_labels, cast=True, resize=True, normalize=T
 
 
 def prepare(dataset, image_shape, num_classes, batch_size=None):
+    """
+    Prepare an input pipeline for training a dataset.
+    :param dataset: The dataset containing training data.
+    :param image_shape: A common shape of the input image. Images with different sizes will be resized. E.g. (80, 80, 3)
+    :param num_classes: Number of prediction classes.
+    :param batch_size: Batch size for training.
+    :return: Prepared dataset.
+    """
     dataset = dataset.map(lambda x: preprocess(x, image_shape[0:-1], num_classes),
                           num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.cache()
@@ -184,12 +132,18 @@ def tensor_to_image(tensor):
     return Image.fromarray(tensor)
 
 
-def load_image(url, output_shape=(224, 224, 3)):
+def load_image(url_list, output_shape=(224, 224, 3)):
     cwd = os.path.dirname(os.path.abspath(__file__))
-    file_name = cwd + "/../data/downloads/image-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".jpg"
-    image_file = tf.keras.utils.get_file(file_name, url, extract=True)
-    img = tf.keras.preprocessing.image.load_img(image_file).resize(output_shape[:-1])
-    return tf.keras.preprocessing.image.img_to_array(img) / 255.
+    timestamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    img_list = []
+    file_list = []
+    for idx, url in enumerate(url_list):
+        file_name = f"{cwd}/../data/downloads/image-{timestamp}_{idx+1}.jpg"
+        image_file = tf.keras.utils.get_file(file_name, url, extract=True)
+        img = tf.keras.preprocessing.image.load_img(image_file).resize(output_shape[:-1])
+        img_list.append(tf.keras.preprocessing.image.img_to_array(img) / 255.)
+        file_list.append(file_name)
+    return img_list, file_list
 
 
 def load_labels():
@@ -211,9 +165,9 @@ def load_labels_from_dataset():
 
 
 def main():
-    # show_examples()
+    show_examples()
     # analyze()
-    print(load_labels_from_dataset())
+    # print(load_labels_from_dataset())
 
 
 if __name__ == "__main__":
